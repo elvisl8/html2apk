@@ -1,0 +1,241 @@
+@TestOn('vm')
+library;
+
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
+import 'package:html2apk/src/apk/apk_builder.dart';
+import 'package:html2apk/src/apk/app_options.dart';
+import 'package:html2apk/src/apk/app_spec.dart';
+import 'package:html2apk/src/apk/signing_key.dart';
+import 'package:html2apk/src/apk/template_contract.dart';
+import 'package:html2apk/src/apk/zip.dart';
+
+import '../support/sdk_tools.dart';
+
+void main() {
+  late SigningKey key;
+  late Uint8List template;
+  late Uint8List redPng;
+
+  setUpAll(() {
+    key = SigningKey.generate();
+    template = loadTemplate();
+    final src = img.Image(width: 512, height: 512, numChannels: 3);
+    img.fill(src, color: img.ColorRgb8(255, 0, 0));
+    redPng = Uint8List.fromList(img.encodePng(src));
+  });
+
+  AppSpec spec({Uint8List? icon, String name = 'Café 🚀', String? pkg}) =>
+      AppSpec(
+        name: name,
+        url: 'https://example.org',
+        color: 0xFFFFEB3B,
+        fullscreen: true,
+        packageId: pkg ?? 'org.example.html2apk',
+        icon: icon,
+      );
+
+  Map<String, ZipEntry> entries(Uint8List apk) => {
+    for (final e in readZip(apk)) e.name: e,
+  };
+
+  test('config.json holds the spec config', () {
+    final s = spec();
+    final apk = buildApk(template: template, spec: s, key: key);
+    final e = entries(apk)[kConfigPath]!;
+    expect(utf8.decode(e.data), s.configJson());
+  });
+
+  test('icons replaced', () {
+    final apk = buildApk(
+      template: template,
+      spec: spec(icon: redPng),
+      key: key,
+    );
+    final icons = entries(apk).entries.where((e) => kIconPath.hasMatch(e.key));
+    expect(icons, isNotEmpty);
+    for (final e in icons) {
+      final density = RegExp(r'mipmap-(\w+?)(-v4)?/').firstMatch(e.key)![1]!;
+      final d = img.decodePng(e.value.data)!;
+      final size = kIconSizes[density]!;
+      expect([d.width, d.height], [size, size]);
+      final p = d.getPixel(size ~/ 2, size ~/ 2);
+      expect([p.r, p.g, p.b], [255, 0, 0]);
+    }
+  });
+
+  test('no icon keeps template icons', () {
+    final apk = buildApk(template: template, spec: spec(), key: key);
+    final before = entries(template);
+    final after = entries(apk);
+    for (final n in before.keys.where(kIconPath.hasMatch)) {
+      expect(after[n]!.data, before[n]!.data);
+    }
+  });
+
+  test('resources.arsc stays stored and META-INF only has the v2 block', () {
+    final apk = buildApk(template: template, spec: spec(), key: key);
+    final m = entries(apk);
+    expect(m['resources.arsc']!.method, 0);
+    expect(
+      m.keys.where(
+        (n) =>
+            RegExp(r'^META-INF/.*\.(SF|RSA|DSA|EC)$|MANIFEST\.MF$').hasMatch(n),
+      ),
+      isEmpty,
+    );
+  });
+
+  test('v1 signature files in the template are dropped', () {
+    final sigNames = [
+      'META-INF/MANIFEST.MF',
+      'META-INF/CERT.SF',
+      'META-INF/CERT.RSA',
+    ];
+    final signedTemplate = writeZip([
+      ...readZip(template),
+      for (final n in sigNames) ZipEntry.stored(n, Uint8List.fromList([1])),
+      ZipEntry.stored('META-INF/keep.txt', Uint8List.fromList([2])),
+    ]);
+    final names = entries(
+      buildApk(template: signedTemplate, spec: spec(), key: key),
+    ).keys;
+    for (final n in sigNames) {
+      expect(names, isNot(contains(n)));
+    }
+    expect(names, contains('META-INF/keep.txt'));
+  });
+
+  test('local site files are bundled under assets/site', () {
+    final site = {
+      'index.html': Uint8List.fromList(utf8.encode('<h1>hi</h1>')),
+      'css/style.css': Uint8List.fromList(utf8.encode('h1{}')),
+    };
+    final apk = buildApk(
+      template: template,
+      spec: AppSpec(
+        name: 'Local',
+        url: '',
+        source: AppSource.folder,
+        siteFiles: site,
+        entry: 'index.html',
+        color: 0xFF000000,
+        fullscreen: false,
+        packageId: 'local.html2apk',
+      ),
+      key: key,
+    );
+    final m = entries(apk);
+    expect(m['assets/site/index.html']!.data, site['index.html']);
+    expect(m['assets/site/css/style.css']!.data, site['css/style.css']);
+    expect(jsonDecode(utf8.decode(m[kConfigPath]!.data))['mode'], 'local');
+  });
+
+  test('local spec without an entry page throws ArgumentError', () {
+    expect(
+      () => buildApk(
+        template: template,
+        spec: AppSpec(
+          name: 'Local',
+          url: '',
+          source: AppSource.folder,
+          siteFiles: {'style.css': Uint8List(0)},
+          color: 0xFF000000,
+          fullscreen: false,
+          packageId: 'local.html2apk',
+        ),
+        key: key,
+      ),
+      throwsArgumentError,
+    );
+  });
+
+  test('empty name / bad package id throw ArgumentError', () {
+    expect(
+      () => buildApk(
+        template: template,
+        spec: spec(name: '  '),
+        key: key,
+      ),
+      throwsArgumentError,
+    );
+    expect(
+      () => buildApk(
+        template: template,
+        spec: spec(pkg: '1bad'),
+        key: key,
+      ),
+      throwsArgumentError,
+    );
+  });
+
+  test('the version name reaches the manifest, the default stays', () async {
+    if (buildTool('aapt2') == null) {
+      markTestSkipped('Android SDK build-tools not available');
+      return;
+    }
+    final dir = Directory.systemTemp.createTempSync('apkv');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    Future<String> badging(AppOptions options) async {
+      final apk = buildApk(
+        template: template,
+        spec: AppSpec(
+          name: 'V',
+          url: 'https://example.org',
+          color: 0xFF000000,
+          fullscreen: false,
+          packageId: 'org.example.html2apk',
+          options: options,
+        ),
+        key: key,
+      );
+      final f = File('${dir.path}/v.apk')..writeAsBytesSync(apk);
+      final r = await runTool('aapt2', ['dump', 'badging', f.path]);
+      expect(r.exitCode, 0, reason: '${r.stderr}');
+      return r.stdout as String;
+    }
+
+    expect(
+      await badging(const AppOptions(versionName: ' 2.5-beta ')),
+      contains("versionName='2.5-beta'"),
+    );
+    expect(await badging(const AppOptions()), contains("versionName='1.0'"));
+  });
+
+  test('badging, apksigner and zipalign accept the APK', () async {
+    if (buildTool('aapt2') == null ||
+        buildTool('apksigner') == null ||
+        buildTool('zipalign') == null) {
+      markTestSkipped('Android SDK build-tools not available');
+      return;
+    }
+    final apk = buildApk(
+      template: template,
+      spec: spec(icon: redPng),
+      key: key,
+    );
+    final dir = Directory.systemTemp.createTempSync('apkb');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final f = File('${dir.path}/out.apk')..writeAsBytesSync(apk);
+
+    final badging = await runTool('aapt2', ['dump', 'badging', f.path]);
+    expect(badging.exitCode, 0, reason: '${badging.stderr}');
+    expect(badging.stdout, contains("package: name='org.example.html2apk'"));
+    expect(badging.stdout, contains("application-label:'Café 🚀'"));
+
+    final v = await runTool('apksigner', [
+      'verify',
+      '--min-sdk-version',
+      '24',
+      f.path,
+    ]);
+    expect(v.exitCode, 0, reason: '${v.stdout}${v.stderr}');
+
+    final z = await runTool('zipalign', ['-c', '-P', '16', '4', f.path]);
+    expect(z.exitCode, 0, reason: '${z.stdout}${z.stderr}');
+  });
+}

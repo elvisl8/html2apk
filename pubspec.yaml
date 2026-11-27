@@ -1,0 +1,36 @@
+name: html2apk
+description: "Turn a static HTML site - a website URL, a folder with index.html, or a single HTML file - into an Android app (APK), right on your device."
+publish_to: 'none'
+
+version: 2.1.0+1
+
+environment:
+  sdk: ^3.13.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  archive: ^4.5.2
+  pointycastle: ^4.0.0
+  crypto: ^3.0.8
+  image: ^4.12.0
+  shared_preferences: ^2.5.6
+  file_picker: ^13.3.0
+  share_plus: ^13.3.1
+  path_provider: ^2.1.6
+  flutter_colorpicker: ^1.1.0
+  web: ^1.1.2
+  url_launcher: ^6.3.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+flutter:
+  assets:
+    - assets/template.apk
+
+  uses-material-design: true

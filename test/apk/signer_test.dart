@@ -1,0 +1,214 @@
+@TestOn('vm')
+library;
+
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:pointycastle/asn1.dart';
+import 'package:html2apk/src/apk/signing_key.dart';
+import 'package:html2apk/src/apk/v2_signer.dart';
+import 'package:html2apk/src/apk/zip.dart';
+
+import '../fixtures/golden_key.dart';
+import '../support/sdk_tools.dart';
+
+void main() {
+  late SigningKey key;
+  late Directory tmp;
+  final noApksigner = buildTool('apksigner') == null
+      ? 'apksigner not found (set ANDROID_HOME)'
+      : null;
+
+  setUpAll(() {
+    key = SigningKey.generate();
+    tmp = Directory.systemTemp.createTempSync('html2apk_signer');
+  });
+
+  tearDownAll(() => tmp.deleteSync(recursive: true));
+
+  Future<String> signToFile(SigningKey k, String name) async {
+    final signed = signApkV2(writeZip(readZip(loadTemplate())), k);
+    final f = File('${tmp.path}/$name.apk')..writeAsBytesSync(signed);
+    return f.path;
+  }
+
+  Future<String> certSha256(String apk) async {
+    final r = await runTool('apksigner', ['verify', '--print-certs', apk]);
+    expect(r.exitCode, 0, reason: '${r.stdout}\n${r.stderr}');
+    final m = RegExp(r'certificate SHA-256 digest: ([0-9a-f]+)')
+        .firstMatch(r.stdout as String);
+    expect(m, isNotNull, reason: r.stdout as String);
+    return m!.group(1)!;
+  }
+
+  test('certificateSha256 equals the apksigner digest', () async {
+    final printed = await certSha256(await signToFile(key, 'fp'));
+    expect(key.certificateSha256.replaceAll(':', '').toLowerCase(), printed);
+    expect(
+      key.certificateSha256,
+      matches(RegExp(r'^([0-9A-F]{2}:){31}[0-9A-F]{2}$')),
+    );
+  }, skip: noApksigner);
+
+  test('json round-trip', () {
+    final k2 = SigningKey.fromJson(key.toJson());
+    expect(k2.privateKey.modulus, key.privateKey.modulus);
+    expect(k2.privateKey.privateExponent, key.privateKey.privateExponent);
+    expect(k2.publicKey.publicExponent, key.publicKey.publicExponent);
+    expect(k2.certificateDer, key.certificateDer);
+    // Reconstructed key signs identically (PKCS#1 v1.5 is deterministic).
+    final zip = writeZip([
+      ZipEntry.stored('a.txt', Uint8List.fromList([1, 2, 3])),
+    ]);
+    expect(signApkV2(zip, k2), signApkV2(zip, key));
+  });
+
+  test(
+    'fromRsaParts rebuilds the key with a fresh valid certificate',
+    () async {
+      final k = key.privateKey;
+      final rebuilt = SigningKey.fromRsaParts(
+        n: k.modulus!,
+        d: k.privateExponent!,
+        p: k.p!,
+        q: k.q!,
+      );
+      expect(rebuilt.publicKey.modulus, key.publicKey.modulus);
+      expect(rebuilt.publicKey.exponent, BigInt.from(65537));
+      // Survives the strict JSON validation (cert matches key).
+      SigningKey.fromJson(rebuilt.toJson());
+      if (noApksigner != null) return;
+      final apk = await signToFile(rebuilt, 'rebuilt');
+      final r = await runTool('apksigner', [
+        'verify',
+        '--min-sdk-version',
+        '24',
+        apk,
+      ]);
+      expect(r.exitCode, 0, reason: '${r.stdout}\n${r.stderr}');
+    },
+  );
+
+  test('fromRsaParts accepts d reduced mod lcm(p-1,q-1) (WebCrypto style)', () {
+    final k = key.privateKey;
+    final p1 = k.p! - BigInt.one, q1 = k.q! - BigInt.one;
+    final lambda = p1 * q1 ~/ p1.gcd(q1);
+    final e = BigInt.from(65537);
+    // Both d and d+lambda invert e mod lambda; pick the one that differs from
+    // pointycastle's (p-1)(q-1) form so the normalisation is really exercised.
+    final dPhi = e.modInverse(p1 * q1);
+    var dLambda = e.modInverse(lambda);
+    if (dLambda == dPhi) dLambda += lambda;
+    final rebuilt = SigningKey.fromRsaParts(
+      n: k.modulus!,
+      d: dLambda,
+      p: k.p!,
+      q: k.q!,
+    );
+    expect(rebuilt.publicKey.exponent, e);
+    SigningKey.fromJson(rebuilt.toJson());
+    expect(
+      () => SigningKey.fromRsaParts(
+        n: k.modulus!,
+        d: dLambda + BigInt.two,
+        p: k.p!,
+        q: k.q!,
+      ),
+      throwsFormatException,
+    );
+  });
+
+  test('fromJson rejects garbage', () {
+    expect(() => SigningKey.fromJson({'n': 'zz'}), throwsFormatException);
+    expect(() => SigningKey.fromJson({}), throwsFormatException);
+    final j = key.toJson();
+    expect(
+      () => SigningKey.fromJson({...j, 'cert': '!!notbase64'}),
+      throwsFormatException,
+    );
+    expect(() => SigningKey.fromJson({...j, 'p': '3'}), throwsFormatException);
+    expect(
+      () => SigningKey.fromJson({...j, 'p': '1', 'q': j['n']}),
+      throwsFormatException,
+    );
+  });
+
+  test('fromJson rejects a certificate of another key', () {
+    final other = SigningKey.fromJson(goldenKeyJson);
+    expect(other.publicKey.modulus, isNot(key.publicKey.modulus));
+    expect(
+      () => SigningKey.fromJson({
+        ...key.toJson(),
+        'cert': other.toJson()['cert'],
+      }),
+      throwsFormatException,
+    );
+  });
+
+  test('signApkV2With gives the same APK as signApkV2', () async {
+    final zip = writeZip(readZip(loadTemplate()));
+    expect(
+      await signApkV2With(
+        zip,
+        key,
+        (m) async => rsaSha256Sign(key.privateKey, m),
+      ),
+      signApkV2(zip, key),
+    );
+  });
+
+  test('pkcs8Der carries the key with its CRT values', () {
+    final info = ASN1Parser(key.pkcs8Der).nextObject() as ASN1Sequence;
+    final octets = info.elements![2] as ASN1OctetString;
+    final rsa =
+        ASN1Parser(Uint8List.fromList(octets.octets!)).nextObject()
+            as ASN1Sequence;
+    BigInt at(int i) => (rsa.elements![i] as ASN1Integer).integer!;
+    final k = key.privateKey;
+    final p = k.p!, q = k.q!, d = k.privateExponent!;
+    expect(at(1), k.modulus);
+    expect(at(2), BigInt.from(65537));
+    expect([at(3), at(4), at(5)], [d, p, q]);
+    expect(at(6), d % (p - BigInt.one));
+    expect(at(7), d % (q - BigInt.one));
+    expect(at(8) * q % p, BigInt.one);
+  });
+
+  test('signing an already signed APK throws ArgumentError', () {
+    final zip = writeZip([
+      ZipEntry.stored('a.txt', Uint8List.fromList([1, 2, 3])),
+    ]);
+    final signed = signApkV2(zip, key);
+    expect(() => signApkV2(signed, key), throwsArgumentError);
+  });
+
+  test('apksigner verifies v2 signature', () async {
+    final apk = await signToFile(key, 'a');
+    final r = await runTool('apksigner', [
+      'verify',
+      '--verbose',
+      '--min-sdk-version',
+      '24',
+      apk,
+    ]);
+    expect(r.exitCode, 0, reason: '${r.stdout}\n${r.stderr}');
+    expect(
+      r.stdout,
+      contains('Verified using v2 scheme (APK Signature Scheme v2): true'),
+    );
+  }, skip: noApksigner);
+
+  test(
+    'same key gives same certificate digest',
+    () async {
+      final d1 = await certSha256(await signToFile(key, 'b1'));
+      final d2 = await certSha256(await signToFile(key, 'b2'));
+      expect(d1, d2);
+      final d3 = await certSha256(await signToFile(SigningKey.generate(), 'c'));
+      expect(d3, isNot(d1));
+    },
+    skip: noApksigner,
+    timeout: const Timeout(Duration(minutes: 5)),
+  );
+}

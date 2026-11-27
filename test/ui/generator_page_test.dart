@@ -1,0 +1,572 @@
+@TestOn('vm')
+library;
+
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
+import 'package:html2apk/src/apk/signing_key.dart';
+import 'package:html2apk/src/saved_apps.dart';
+import 'package:html2apk/src/ui/advanced_settings_page.dart';
+import 'package:html2apk/src/ui/generator_page.dart';
+import 'package:html2apk/src/ui/key_page.dart';
+import 'package:html2apk/src/ui/my_apps_page.dart';
+import 'package:html2apk/src/ui/result_page.dart';
+
+import '../support/sdk_tools.dart' as sdk;
+import 'fakes.dart';
+
+void main() {
+  late SigningKey key;
+  setUpAll(() => key = SigningKey.generate());
+
+  Future<SavedAppsStore> pumpPage(
+    WidgetTester tester,
+    FakeActions actions, {
+    Map<String, Object> prefs = const {},
+  }) async {
+    final store = await memoryStore(prefs);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GeneratorPage(
+          actions: actions,
+          savedApps: store,
+          loadKey: () async => key,
+          replaceKey: (_) async {},
+          loadTemplate: () async => sdk.loadTemplate(),
+        ),
+      ),
+    );
+    return store;
+  }
+
+  String savedJson(List<SavedApp> apps) =>
+      jsonEncode([for (final a in apps) a.toJson()]);
+
+  SavedApp saved(
+    String name,
+    String url,
+    String pkg, {
+    bool fullscreen = true,
+  }) => SavedApp(
+    name: name,
+    url: url,
+    color: 0xFF4CAF50,
+    fullscreen: fullscreen,
+    packageId: pkg,
+    updatedAt: DateTime.utc(2026, 1, 1),
+  );
+
+  Future<void> enter(WidgetTester tester, String field, String text) async {
+    await tester.enterText(find.byKey(Key(field)), text);
+    await tester.pump();
+  }
+
+  Future<void> tapGenerate(WidgetTester tester) async {
+    await tester.ensureVisible(find.byKey(const Key('generate')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('generate')));
+  }
+
+  testWidgets('package line follows URL', (tester) async {
+    await pumpPage(tester, FakeActions());
+    await enter(tester, 'url-field', 'example.org');
+    expect(find.textContaining('org.example.html2apk'), findsOneWidget);
+  });
+
+  testWidgets('manual package edit sticks', (tester) async {
+    await pumpPage(tester, FakeActions());
+    await enter(tester, 'url-field', 'example.org');
+    await tester.tap(find.byKey(const Key('package-tile')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('package-field')),
+      'org.example.shop',
+    );
+    await tester.pump();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('org.example.shop'), findsOneWidget);
+    await enter(tester, 'url-field', 'other.com');
+    expect(find.textContaining('org.example.shop'), findsOneWidget);
+    expect(find.textContaining('com.other.html2apk'), findsNothing);
+  });
+
+  testWidgets('invalid URL disables Generate', (tester) async {
+    await pumpPage(tester, FakeActions());
+    await enter(tester, 'name-field', 'Test');
+    await enter(tester, 'url-field', 'ftp://x');
+    expect(find.textContaining('Unsupported URL scheme'), findsOneWidget);
+    final button = tester.widget<FilledButton>(
+      find.byKey(const Key('generate')),
+    );
+    expect(button.onPressed, isNull);
+  });
+
+  testWidgets('generate navigates to result', (tester) async {
+    final actions = FakeActions();
+    final store = await pumpPage(tester, actions);
+    await enter(tester, 'name-field', 'Test');
+    await enter(tester, 'url-field', 'example.org');
+    await tapGenerate(tester);
+    await tester.pump();
+    for (
+      var i = 0;
+      i < 200 && find.byType(ResultPage).evaluate().isEmpty;
+      i++
+    ) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+    expect(find.byType(ResultPage), findsOneWidget);
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+    expect(actions.saved.single, isNotEmpty);
+    expect(actions.savedNames.single, 'Test.apk');
+    final apps = store.load();
+    expect(apps, hasLength(1));
+    expect(apps.single.name, 'Test');
+    expect(apps.single.packageId, 'org.example.html2apk');
+  });
+
+  testWidgets('corrupt store is replaced by the new app on generate', (
+    tester,
+  ) async {
+    final store = await pumpPage(
+      tester,
+      FakeActions(),
+      prefs: {'saved_apps_v1': 'garbage'},
+    );
+    await enter(tester, 'name-field', 'Test');
+    await enter(tester, 'url-field', 'example.org');
+    await tapGenerate(tester);
+    await tester.pump();
+    for (
+      var i = 0;
+      i < 200 && find.byType(ResultPage).evaluate().isEmpty;
+      i++
+    ) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pump();
+    }
+    await tester.pump();
+    expect(find.byType(ResultPage), findsOneWidget);
+    expect(find.textContaining('could not be saved'), findsNothing);
+    expect(store.load().map((a) => a.packageId), ['org.example.html2apk']);
+  });
+
+  Future<void> openMyApps(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('My apps'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('My apps lists apps; tap fills form and keeps package', (
+    tester,
+  ) async {
+    await pumpPage(
+      tester,
+      FakeActions(),
+      prefs: {
+        'saved_apps_v1': savedJson([
+          saved('Shop', 'https://shop.example.com', 'org.example.shop'),
+        ]),
+      },
+    );
+    await openMyApps(tester);
+    expect(find.byType(MyAppsPage), findsOneWidget);
+    expect(find.text('Shop'), findsOneWidget);
+    expect(find.text('org.example.shop'), findsOneWidget);
+    await tester.tap(find.text('Shop'));
+    await tester.pumpAndSettle();
+    expect(find.byType(MyAppsPage), findsNothing);
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('name-field')))
+          .controller!
+          .text,
+      'Shop',
+    );
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('url-field')))
+          .controller!
+          .text,
+      'https://shop.example.com',
+    );
+    expect(
+      tester.widget<SwitchListTile>(find.byType(SwitchListTile)).value,
+      isTrue,
+    );
+    expect(find.textContaining('org.example.shop'), findsOneWidget);
+    await enter(tester, 'url-field', 'other.com');
+    expect(find.textContaining('org.example.shop'), findsOneWidget);
+    expect(find.textContaining('com.other.html2apk'), findsNothing);
+  });
+
+  testWidgets('initial prefills the form', (tester) async {
+    final store = await memoryStore();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GeneratorPage(
+          actions: FakeActions(),
+          loadKey: () async => key,
+          replaceKey: (_) async {},
+          savedApps: store,
+          initial: saved(
+            'Shop',
+            'https://shop.example.com',
+            'org.example.shop',
+          ),
+        ),
+      ),
+    );
+    expect(find.textContaining('org.example.shop'), findsOneWidget);
+    final button = tester.widget<FilledButton>(
+      find.byKey(const Key('generate')),
+    );
+    expect(button.onPressed, isNotNull);
+  });
+
+  testWidgets('empty store shows empty state', (tester) async {
+    await pumpPage(tester, FakeActions());
+    await openMyApps(tester);
+    expect(find.text('No saved apps yet'), findsOneWidget);
+  });
+
+  testWidgets('delete asks to confirm; cancel keeps, confirm removes', (
+    tester,
+  ) async {
+    final store = await pumpPage(
+      tester,
+      FakeActions(),
+      prefs: {
+        'saved_apps_v1': savedJson([
+          saved('Shop', 'https://shop.example.com', 'org.example.shop'),
+        ]),
+      },
+    );
+    await openMyApps(tester);
+    await tester.tap(find.byTooltip('Delete'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Shop'), findsOneWidget);
+    expect(store.load(), hasLength(1));
+    await tester.tap(find.byTooltip('Delete'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Delete'));
+    await tester.pumpAndSettle();
+    expect(find.text('Shop'), findsNothing);
+    expect(find.text('No saved apps yet'), findsOneWidget);
+    expect(store.load(), isEmpty);
+  });
+
+  testWidgets('corrupt store shows error and empty state, value kept', (
+    tester,
+  ) async {
+    final store = await pumpPage(
+      tester,
+      FakeActions(),
+      prefs: {'saved_apps_v1': 'garbage'},
+    );
+    await openMyApps(tester);
+    expect(find.text('Saved apps could not be read'), findsOneWidget);
+    expect(find.text('No saved apps yet'), findsOneWidget);
+    expect(() => store.load(), throwsFormatException);
+  });
+
+  testWidgets('About shows credit', (tester) async {
+    await pumpPage(tester, FakeActions());
+    await tester.tap(find.byTooltip('About'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Made by devilAPI with <3'), findsOneWidget);
+  });
+
+  testWidgets('every build loads the key again (no stale key after restore)', (
+    tester,
+  ) async {
+    final other = SigningKey.generate();
+    final keys = [key, other];
+    var calls = 0;
+    final store = await memoryStore();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GeneratorPage(
+          actions: FakeActions(),
+          savedApps: store,
+          loadKey: () async => keys[calls++],
+          replaceKey: (_) async {},
+          loadTemplate: () async => sdk.loadTemplate(),
+        ),
+      ),
+    );
+    await enter(tester, 'name-field', 'Test');
+    await enter(tester, 'url-field', 'example.org');
+    for (var round = 1; round <= 2; round++) {
+      await tapGenerate(tester);
+      await tester.pump();
+      for (
+        var i = 0;
+        i < 200 && find.byType(ResultPage).evaluate().isEmpty;
+        i++
+      ) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 100)),
+        );
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+      expect(find.byType(ResultPage), findsOneWidget);
+      expect(calls, round);
+      tester.state<NavigatorState>(find.byType(Navigator)).pop();
+      await tester.pumpAndSettle();
+    }
+  });
+
+  Future<void> pumpWith(
+    WidgetTester tester, {
+    Future<SigningKey> Function()? loadKey,
+    Future<PickedImage?> Function()? pickIcon,
+  }) async {
+    final store = await memoryStore();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GeneratorPage(
+          actions: FakeActions(),
+          savedApps: store,
+          loadKey: loadKey ?? () async => key,
+          replaceKey: (_) async {},
+          loadTemplate: () async => sdk.loadTemplate(),
+          pickIcon: pickIcon ?? () async => null,
+        ),
+      ),
+    );
+  }
+
+  /// Taps the icon tile and lets the background decode finish.
+  Future<void> pickIconAndWait(WidgetTester tester) async {
+    await tester.tap(find.text('Icon'));
+    for (
+      var i = 0;
+      i < 200 && find.text('Default icon').evaluate().isNotEmpty;
+      i++
+    ) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump();
+    }
+  }
+
+  testWidgets('build error shows a SnackBar and re-enables Generate', (
+    tester,
+  ) async {
+    await pumpWith(tester, loadKey: () async => throw StateError('boom'));
+    await enter(tester, 'name-field', 'Test');
+    await enter(tester, 'url-field', 'example.org');
+    await tapGenerate(tester);
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.text('Could not build the APK: Bad state: boom'),
+      findsOneWidget,
+    );
+    expect(find.byType(ResultPage), findsNothing);
+    expect(find.text('Generate'), findsOneWidget);
+  });
+
+  testWidgets('progress starts with a neutral label', (tester) async {
+    final pending = Completer<SigningKey>();
+    await pumpWith(tester, loadKey: () => pending.future);
+    await enter(tester, 'name-field', 'Test');
+    await enter(tester, 'url-field', 'example.org');
+    await tapGenerate(tester);
+    await tester.pump();
+    expect(find.text('Preparing…'), findsOneWidget);
+    expect(find.textContaining('signing key'), findsNothing);
+    pending.completeError(StateError('stop'));
+    await tester.pump();
+  });
+
+  testWidgets('invalid icon shows the decode error and keeps no icon', (
+    tester,
+  ) async {
+    await pumpWith(
+      tester,
+      pickIcon: () async =>
+          (bytes: Uint8List.fromList([1, 2, 3]), name: 'bad.png'),
+    );
+    await pickIconAndWait(tester);
+    expect(find.text('Not a supported image'), findsOneWidget);
+    expect(find.text('bad.png'), findsNothing);
+    expect(find.byType(Image), findsNothing);
+  });
+
+  testWidgets('valid icon is taken over', (tester) async {
+    final png = Uint8List.fromList(
+      img.encodePng(img.Image(width: 64, height: 64)),
+    );
+    await pumpWith(tester, pickIcon: () async => (bytes: png, name: 'ok.png'));
+    await pickIconAndWait(tester);
+    expect(find.text('ok.png'), findsOneWidget);
+    expect(find.byType(Image), findsNWidgets(2)); // icon tile + preview
+  });
+
+  testWidgets('failing file picker shows an error instead of crashing', (
+    tester,
+  ) async {
+    await pumpWith(tester, pickIcon: () async => throw Exception('no access'));
+    await pickIconAndWait(tester);
+    expect(
+      find.text('Could not open the image: Exception: no access'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('Signing key action opens the key page', (tester) async {
+    await pumpPage(tester, FakeActions());
+    await tester.tap(find.byTooltip('Signing key'));
+    await tester.pumpAndSettle();
+    expect(find.byType(KeyPage), findsOneWidget);
+    expect(find.text(key.certificateSha256), findsOneWidget);
+  });
+
+  testWidgets('New app resets a loaded saved app to defaults', (tester) async {
+    await pumpPage(
+      tester,
+      FakeActions(),
+      prefs: {
+        'saved_apps_v1': savedJson([
+          saved('Shop', 'https://shop.example.com', 'org.example.shop'),
+        ]),
+      },
+    );
+    await openMyApps(tester);
+    await tester.tap(find.text('Shop'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('org.example.shop'), findsOneWidget);
+    await tester.tap(find.byTooltip('New app'));
+    await tester.pumpAndSettle();
+    String text(String k) =>
+        tester.widget<TextField>(find.byKey(Key(k))).controller!.text;
+    expect(text('name-field'), isEmpty);
+    expect(text('url-field'), isEmpty);
+    expect(
+      tester.widget<SwitchListTile>(find.byType(SwitchListTile)).value,
+      isFalse,
+    );
+    expect(find.text('Default icon'), findsOneWidget);
+    expect(find.textContaining('org.example.shop'), findsNothing);
+    await enter(tester, 'url-field', 'other.com');
+    expect(find.textContaining('com.other.html2apk'), findsOneWidget);
+  });
+
+  testWidgets('AppBar actions are disabled while building', (tester) async {
+    final pending = Completer<SigningKey>();
+    await pumpWith(tester, loadKey: () => pending.future);
+    await enter(tester, 'name-field', 'Test');
+    await enter(tester, 'url-field', 'example.org');
+    await tapGenerate(tester);
+    await tester.pump();
+    for (final tip in ['My apps', 'Signing key', 'New app']) {
+      final button = tester.widget<IconButton>(
+        find.widgetWithIcon(IconButton, switch (tip) {
+          'My apps' => Icons.apps,
+          'Signing key' => Icons.key,
+          _ => Icons.add,
+        }),
+      );
+      expect(button.onPressed, isNull, reason: tip);
+    }
+    pending.completeError(StateError('stop'));
+    await tester.pump();
+  });
+
+  testWidgets('Advanced settings change the preview and survive reopening', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(500, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await pumpPage(tester, FakeActions());
+    expect(find.byKey(const Key('preview-reload')), findsNothing);
+    await tester.tap(find.byKey(const Key('advanced-settings')));
+    await tester.pumpAndSettle();
+    expect(find.byType(AdvancedSettingsPage), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('reload-button')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('hide-system-bars')));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('preview-reload')), findsOneWidget);
+    expect(find.byKey(const Key('preview-status-bar')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('advanced-settings')));
+    await tester.pumpAndSettle();
+    final tile = tester.widget<SwitchListTile>(
+      find.byKey(const Key('reload-button')),
+    );
+    expect(tile.value, isTrue);
+    await tester.tap(find.byTooltip('Reset to defaults'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('preview-reload')), findsNothing);
+  });
+
+  testWidgets('reload button is unavailable in fullscreen', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(500, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await pumpPage(tester, FakeActions());
+    await tester.tap(find.byType(SwitchListTile));
+    await tester.pump();
+    await tester.ensureVisible(find.byKey(const Key('advanced-settings')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('advanced-settings')));
+    await tester.pumpAndSettle();
+    final tile = tester.widget<SwitchListTile>(
+      find.byKey(const Key('reload-button')),
+    );
+    expect(tile.onChanged, isNull);
+    expect(tile.value, isFalse);
+  });
+
+  testWidgets('New app resets the advanced settings', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(500, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await pumpPage(tester, FakeActions());
+    await tester.tap(find.byKey(const Key('advanced-settings')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('reload-button')));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('New app'));
+    await tester.pump();
+    expect(find.byKey(const Key('preview-reload')), findsNothing);
+  });
+
+  testWidgets('package dialog rejects the generator\'s own id', (tester) async {
+    await pumpPage(tester, FakeActions());
+    await enter(tester, 'url-field', 'example.org');
+    await tester.tap(find.byKey(const Key('package-tile')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('package-field')),
+      'de.devilapi.html2apk',
+    );
+    await tester.pump();
+    expect(find.text('This ID belongs to html2apk itself'), findsOneWidget);
+    final ok = tester.widget<TextButton>(find.widgetWithText(TextButton, 'OK'));
+    expect(ok.onPressed, isNull);
+  });
+}
