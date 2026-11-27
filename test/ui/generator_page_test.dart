@@ -65,9 +65,23 @@ void main() {
     await tester.pump();
   }
 
+  // The Generate button sits at the bottom of a scrolling form; the sliver
+  // only builds it once it is scrolled into view. Drag the form's ListView
+  // until the button exists (scrollUntilVisible cannot target it: the page
+  // has two Scrollables, and a ListView is not itself a Scrollable).
+  Future<void> scrollToGenerate(WidgetTester tester) async {
+    for (
+      var i = 0;
+      i < 10 && find.byKey(const Key('generate')).evaluate().isEmpty;
+      i++
+    ) {
+      await tester.drag(find.byType(ListView), const Offset(0, -400));
+      await tester.pump();
+    }
+  }
+
   Future<void> tapGenerate(WidgetTester tester) async {
-    await tester.ensureVisible(find.byKey(const Key('generate')));
-    await tester.pump();
+    await scrollToGenerate(tester);
     await tester.tap(find.byKey(const Key('generate')));
   }
 
@@ -100,6 +114,7 @@ void main() {
     await enter(tester, 'name-field', 'Test');
     await enter(tester, 'url-field', 'ftp://x');
     expect(find.textContaining('Unsupported URL scheme'), findsOneWidget);
+    await scrollToGenerate(tester);
     final button = tester.widget<FilledButton>(
       find.byKey(const Key('generate')),
     );
@@ -229,6 +244,7 @@ void main() {
       ),
     );
     expect(find.textContaining('org.example.shop'), findsOneWidget);
+    await scrollToGenerate(tester);
     final button = tester.widget<FilledButton>(
       find.byKey(const Key('generate')),
     );
