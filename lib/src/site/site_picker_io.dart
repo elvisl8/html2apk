@@ -34,14 +34,13 @@ Future<PickedSite?> pickSiteFolder() async {
 /// Lets the user pick a single HTML file; null when cancelled. The file is
 /// stored as the site's `index.html`.
 Future<PickedSite?> pickSingleHtmlFile() async {
-  final result = await FilePicker.pickFiles(
+  final file = await FilePicker.pickFile(
     type: FileType.custom,
     allowedExtensions: ['html', 'htm'],
-    withData: true,
   );
-  if (result == null || result.files.isEmpty) return null;
-  final file = result.files.first;
-  final bytes = file.bytes;
-  if (bytes == null) return null;
-  return PickedSite(files: {'index.html': bytes}, label: file.name);
+  if (file == null) return null;
+  return PickedSite(
+    files: {'index.html': await file.readAsBytes()},
+    label: file.name,
+  );
 }
