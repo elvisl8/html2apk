@@ -4,7 +4,7 @@
 
 <img src="docs/icon.svg" alt="" width="96" align="right">
 
-**把任意静态 HTML 网站打包成可安装的 Android 应用——直接在浏览器里完成。不用安装、不用 Android 工具链、不用服务器、不用账号。**
+**把任意网站打包成可安装的 Android 应用——直接在浏览器里完成。不用安装、不用 Android 工具链、不用服务器、不用账号。**
 
 html2apk 用纯 Dart 在你自己的设备上构建并签署 APK，方法是给一个小巧的 WebView 模板打补丁。APK 在本地组装、本地签名（网页版用 WebCrypto），你的网站和签名密钥都不会离开本机。给它一个网址、一个含 `index.html` 的文件夹，或单个 HTML 文件——文件夹或单个文件来源的网站会打进 APK 内部，完全离线也能用。
 
