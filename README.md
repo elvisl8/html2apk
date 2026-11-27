@@ -1,16 +1,32 @@
 # html2apk
 
+[English](README.md) | [中文](README.zh-CN.md)
+
 <img src="docs/icon.svg" alt="" width="96" align="right">
 
-Turn a static HTML website into an installable Android app. html2apk is a Flutter app that builds the APK **on your own device** (Android, iOS, Linux, Windows, macOS or in the browser), with no Android toolchain, Flutter or Gradle needed to use it. Give it a website URL, a folder containing `index.html`, or a single HTML file: the generated app is a plain Android WebView (JavaScript on, links stay inside the app, back button walks the page history). A site from a folder or a single file is bundled inside the APK and works fully offline.
+**Turn any static HTML website into an installable Android app — right in your browser. No install, no Android toolchain, no server, no account.**
+
+html2apk builds a signed APK **on your own device**, in pure Dart, by patching a tiny WebView template. The APK is assembled and signed locally (WebCrypto on the web), so your site and your signing key never leave your machine. Give it a website URL, a folder containing `index.html`, or a single HTML file — a folder or single-file site is bundled inside the APK and works fully offline.
 
 <!-- screenshot placeholder: docs/screenshot.png -->
+
+## Highlights
+
+- **Use it instantly** — the web app at https://elvisl8.github.io/html2apk/ needs no install; the newest dev build is at https://elvisl8.github.io/html2apk/dev/. The generator itself also runs as a native app on Android, iOS, Linux, Windows and macOS.
+- **Three sources** — a website URL, a folder with `index.html` at its root (subfolders kept, so relative links, images and scripts keep working), or one self-contained `.html` file.
+- **Truly offline** — sites from a folder or a single file are packed into the APK under `assets/site/` and load from the device, no network needed.
+- **Your key, your updates** — a signing key is created on first use and stored per install. Regenerating an app with the same package ID installs as an update over the old one. Back the key up and restore it on any device.
+- **Bilingual** — full Chinese and English UI with a one-tap switch in the app bar; the choice is remembered.
+- **Full control** — app name, title-bar color, custom icon, fullscreen, editable package ID, plus advanced settings: screen orientation, dark mode for websites (Android 13+), hide status and navigation bars, keep screen on, loading color, external links, loading bar, offline page with Retry, reload button, pinch to zoom, desktop mode, custom user agent and app version.
+- **My apps** — every generated app is remembered with its settings and icon; tap one to load it back into the form and regenerate it as an update.
+- **Same APK everywhere** — the browser and the native builds produce byte-identical APKs (verified by test).
+- **Behaves like a real app** — JavaScript on, links stay inside the app, the back button walks page history first, `mailto:`/`tel:` links open in the system app, and `http://` sites are allowed too.
 
 ## Download
 
 **Web:** use it in the browser at [https://elvisl8.github.io/html2apk/](https://elvisl8.github.io/html2apk/) (newest development build: [https://elvisl8.github.io/html2apk/dev/](https://elvisl8.github.io/html2apk/dev/)).
 
-**Apps:** grab a build from the [Releases] [https://github.com/elvisl8/html2apk/releases](https://github.com/elvisl8/html2apk/releases) page (`N` is the build number):
+**Apps:** grab a build from the [Releases](https://github.com/elvisl8/html2apk/releases) page (`N` is the build number):
 
 - `html2apk-dev-N-android.apk` - Android 7.0+
 - `html2apk-dev-N-linux-x64.tar.gz` - Linux (extract and run `html2apk`; the file picker needs `zenity`)
@@ -25,13 +41,13 @@ Turn a static HTML website into an installable Android app. html2apk is a Flutte
 Fill in the form and tap **Generate**:
 
 - **App name** - home-screen label and title-bar text
-- **Source** - pick one: **URL** - the site to show (`https://` is added if you leave it out); **Folder** - a folder containing `index.html` (subfolders are kept, so relative links, images and scripts keep working); **Single file** - one self-contained `.html` file, used as the app's page
+- **Source** - pick one: **URL** - the site to show (`https://` is added if you leave it out); **Folder** - a folder containing `index.html` (subfolders are kept, so relative links, images and scripts keep working); **Single file** - one self-contained `.html` file, used as the app's page. A folder without `index.html` at its root cannot generate.
 - **Color** - title-bar color
 - **Icon** - an image from your gallery/files (center-cropped to a square); without one the app gets the html2apk globe icon
 - **Fullscreen** - hides only the title bar; the Android status bar stays visible
-- **Advanced settings** - screen orientation, dark mode for websites (Android 13+), hide the status and navigation bars, keep the screen on, app color while loading, open other sites in the browser, loading bar, offline page with Retry, reload button, pinch to zoom, desktop mode, custom user agent and app version
 - **Preview** - a live sketch of the app screen and home-screen icon (beside the form on wide screens)
 - **Package** - shown as "Package: ... - tap to change". For a URL it is derived from the domain (`https://example.org` -> `org.example.html2apk`); for a folder or a single file it is derived from the app name (`My Site` -> `mysite.html2apk`). Every app needs its own ID: two apps with the same ID replace each other, so change it if you build several apps from one source.
+- **Advanced settings** - screen orientation, dark mode for websites (Android 13+), hide the status and navigation bars, keep the screen on, app color while loading, open other sites in the browser, loading bar, offline page with Retry, reload button, pinch to zoom, desktop mode, custom user agent and app version
 
 When the APK is ready:
 
@@ -39,11 +55,11 @@ When the APK is ready:
 - **Save** stores the APK wherever you choose (a download in the browser)
 - **Share** (Android, iOS, macOS) sends the APK to another app
 
-Regenerating an app with the same package ID installs as an update over the old one.
+Regenerating an app with the same package ID installs as an update over the old one. The first build on the web takes a few seconds while the signing key is created.
 
 ### My apps
 
-Every generated app is remembered under **My apps** (the grid icon in the app bar) with its settings and a small copy of its icon. Tap one to load it back into the form, change what you like and tap **Generate** again: it keeps its package ID, so the new APK installs as an update. Deleting an entry only removes it from the list.
+Every generated app is remembered under **My apps** (the grid icon in the app bar) with its settings and a small copy of its icon. Tap one to load it back into the form, change what you like and tap **Generate** again: it keeps its package ID, so the new APK installs as an update. Local files are not stored with a saved app — pick the folder or file again. Deleting an entry only removes it from the list.
 
 ### Back up your signing key
 
@@ -73,7 +89,7 @@ flutter run                 # or: flutter build apk / ios / linux / windows / ma
 
 The template build needs JDK 21 (`JAVA_HOME=/usr/lib/jvm/java-21-openjdk scripts/build_template.sh`); newer JDKs fail in the Android build tools.
 
-Tests that verify generated APKs use `apksigner`, `aapt2` and `zipalign` from the newest build-tools under `$ANDROID_HOME`; `flutter test --platform chrome` runs the browser-compatible tests. The icons are drawn by `tool/make_icons.py` (Pillow); rerun it and `scripts/build_template.sh` after changing the icon.
+Tests that verify generated APKs use `apksigner`, `aapt2` and `zipalign` from the newest build-tools under `$ANDROID_HOME`; `flutter test --platform chrome` runs the browser-compatible tests, including the check that web and native produce byte-identical APKs. The icons are drawn by `tool/make_icons.py` (Pillow); rerun it and `scripts/build_template.sh` after changing the icon.
 
 ## Maintainer: releases and CI
 
@@ -81,7 +97,7 @@ Every push to `master` runs `.github/workflows/dev-release.yml`: it tests, build
 
 Android version codes come from the workflow run number. Do not rename or recreate `dev-release.yml`: the counter would restart and new builds would count as downgrades.
 
-To make a full release, run **Actions -> Release -> Run workflow** (`.github/workflows/release.yml`) with a version like `2.1.0`. It copies the files of the newest `dev-N` build (or the one you name) into a release `v2.1.0`, so it ships exactly the binaries CI tested, and republishes the web app at https://elvisl8.github.io/html2apk/. Bump `version:` in `pubspec.yaml` first so the apps report the same version. Release the newest dev build: `github.token` cannot tag an older commit whose workflow files differ from master's. One-time setup: Settings -> Pages -> Source: **GitHub Actions**.
+To make a full release, run **Actions -> Release -> Run workflow** (`.github/workflows/release.yml`) with a version like `2.1.0`. It copies the files of the newest `dev-N` build (or the one you name) into a release `v2.1.0`, so it ships exactly the binaries CI tested, and republishes the web app at https://elvisl8.github.io/html2apk/. Bump `version:` in `pubspec.yaml` first so the apps report the same version. Release the newest dev build: `github.token` cannot tag an older commit whose workflow files differ from master's. One-time setup: Settings -> Pages -> Source: **GitHub Actions**; Settings -> Environments -> `github-pages` -> Deployment branches must allow `master`.
 
 The Android APK is signed with your own key, supplied through repository secrets. Without them CI signs with a debug key (the release notes say so), and users must uninstall debug-signed builds before installing release-signed ones. Create a keystore with JDK 17-21:
 
