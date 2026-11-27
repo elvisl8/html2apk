@@ -4,7 +4,7 @@
 
 <img src="docs/icon.svg" alt="" width="96" align="right">
 
-**Turn any static HTML website into an installable Android app — right in your browser. No install, no Android toolchain, no server, no account.**
+**Turn any website into an installable Android app — right in your browser. No install, no Android toolchain, no server, no account.**
 
 html2apk builds a signed APK **on your own device**, in pure Dart, by patching a tiny WebView template. The APK is assembled and signed locally (WebCrypto on the web), so your site and your signing key never leave your machine. Give it a website URL, a folder containing `index.html`, or a single HTML file — a folder or single-file site is bundled inside the APK and works fully offline.
 
