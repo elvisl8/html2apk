@@ -42,18 +42,36 @@ void main() {
     return (prefs, store);
   }
 
+  // The Generate button sits at the bottom of a scrolling form; the sliver
+  // only builds it once it is scrolled into view. Drag the form's ListView
+  // until the button exists (scrollUntilVisible cannot target it: the page
+  // has two Scrollables, and a ListView is not itself a Scrollable).
+  Future<void> scrollToGenerate(WidgetTester tester) async {
+    for (
+      var i = 0;
+      i < 10 && find.byKey(const Key('generate')).evaluate().isEmpty;
+      i++
+    ) {
+      await tester.drag(find.byType(ListView), const Offset(0, -400));
+      await tester.pump();
+    }
+  }
+
   testWidgets('Chinese preference renders Chinese UI', (tester) async {
     await pumpPage(tester, language: 'zh');
     // The preview reuses the app-name label as its title while the field
     // is empty, so type a name first to leave exactly one '应用名称'.
     await tester.enterText(find.byKey(const Key('name-field')), '测试应用');
     await tester.pump();
-    expect(find.text('生成'), findsOneWidget);
+    // Check the top of the form before scrolling: the sliver unmounts it
+    // once the Generate button is scrolled into view.
     expect(find.text('应用名称'), findsOneWidget);
     expect(find.text('网址'), findsOneWidget);
     expect(find.byTooltip('我的应用'), findsOneWidget);
-    expect(find.text('Generate'), findsNothing);
     expect(find.text('EN'), findsOneWidget);
+    await scrollToGenerate(tester);
+    expect(find.text('生成'), findsOneWidget);
+    expect(find.text('Generate'), findsNothing);
   });
 
   testWidgets('English preference renders English UI', (tester) async {
@@ -62,10 +80,13 @@ void main() {
     // is empty, so type a name first to leave exactly one 'App name'.
     await tester.enterText(find.byKey(const Key('name-field')), 'Test App');
     await tester.pump();
-    expect(find.text('Generate'), findsOneWidget);
+    // Check the top of the form before scrolling: the sliver unmounts it
+    // once the Generate button is scrolled into view.
     expect(find.text('App name'), findsOneWidget);
     expect(find.text('中文'), findsOneWidget);
     expect(find.text('生成'), findsNothing);
+    await scrollToGenerate(tester);
+    expect(find.text('Generate'), findsOneWidget);
   });
 
   testWidgets('language toggle switches and persists the choice',
@@ -73,11 +94,13 @@ void main() {
     final (prefs, _) = await pumpPage(tester, language: 'zh');
     await tester.tap(find.text('EN'));
     await tester.pumpAndSettle();
+    await scrollToGenerate(tester);
     expect(find.text('Generate'), findsOneWidget);
     expect(prefs.getString(languagePrefKey), 'en');
 
     await tester.tap(find.text('中文'));
     await tester.pumpAndSettle();
+    await scrollToGenerate(tester);
     expect(find.text('生成'), findsOneWidget);
     expect(prefs.getString(languagePrefKey), 'zh');
   });
@@ -107,6 +130,7 @@ void main() {
       ),
     );
     // The test environment reports an English locale.
+    await scrollToGenerate(tester);
     expect(find.text('Generate'), findsOneWidget);
   });
 }
