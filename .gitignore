@@ -52,16 +52,3 @@ template/**/build/
 template/.gradle/
 template/local.properties
 
-# Generated icons and wrapper jar (run: python3 tool/make_icons.py;
-# build_template.sh fetches the jar). They are not committed.
-docs/icon.png
-android/app/src/main/res/mipmap-*/ic_launcher.png
-template/app/src/main/res/mipmap-*/ic_launcher.png
-web/icons/Icon-*.png
-web/favicon.png
-web/og-image.png
-macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_*.png
-ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-*.png
-ios/Runner/Assets.xcassets/LaunchImage.imageset/LaunchImage*.png
-windows/runner/resources/app_icon.ico
-template/gradle/wrapper/gradle-wrapper.jar
