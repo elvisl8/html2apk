@@ -51,6 +51,21 @@ void main() {
     await tester.pump();
   }
 
+  // The Generate button sits at the bottom of a scrolling form; the sliver
+  // only builds it once it is scrolled into view. Drag the form's ListView
+  // until the button exists (scrollUntilVisible cannot target it: the page
+  // has two Scrollables, and a ListView is not itself a Scrollable).
+  Future<void> scrollToGenerate(WidgetTester tester) async {
+    for (
+      var i = 0;
+      i < 10 && find.byKey(const Key('generate')).evaluate().isEmpty;
+      i++
+    ) {
+      await tester.drag(find.byType(ListView), const Offset(0, -400));
+      await tester.pump();
+    }
+  }
+
   testWidgets('folder with index.html enables Generate', (tester) async {
     await pumpPage(
       tester,
@@ -65,6 +80,7 @@ void main() {
     await tester.pump();
     expect(find.textContaining('2 files'), findsOneWidget);
     expect(find.textContaining('my_site.html2apk'), findsOneWidget);
+    await scrollToGenerate(tester);
     final button = tester.widget<FilledButton>(
       find.byKey(const Key('generate')),
     );
@@ -82,6 +98,7 @@ void main() {
     await tester.tap(find.byKey(const Key('pick-folder')));
     await tester.pump();
     expect(find.text('No index.html in this folder'), findsOneWidget);
+    await scrollToGenerate(tester);
     final button = tester.widget<FilledButton>(
       find.byKey(const Key('generate')),
     );
@@ -102,6 +119,7 @@ void main() {
     await tester.tap(find.byKey(const Key('pick-html-file')));
     await tester.pump();
     expect(find.textContaining('page.html'), findsWidgets);
+    await scrollToGenerate(tester);
     final button = tester.widget<FilledButton>(
       find.byKey(const Key('generate')),
     );
