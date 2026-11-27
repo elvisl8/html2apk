@@ -6,6 +6,8 @@
 
 **把任意网站打包成可安装的 Android 应用——直接在浏览器里完成。不用安装、不用 Android 工具链、不用服务器、不用账号。**
 
+灵感来自 [devilAPI/web2apk](https://github.com/devilAPI/web2apk)。
+
 html2apk 用纯 Dart 在你自己的设备上构建并签署 APK，方法是给一个小巧的 WebView 模板打补丁。APK 在本地组装、本地签名（网页版用 WebCrypto），你的网站和签名密钥都不会离开本机。给它一个网址、一个含 `index.html` 的文件夹，或单个 HTML 文件——文件夹或单个文件来源的网站会打进 APK 内部，完全离线也能用。
 
 <!-- 截图占位：docs/screenshot.png -->
@@ -112,7 +114,9 @@ base64 -w0 release.jks   # -> secret ANDROID_KEYSTORE_BASE64
 
 本地做发布构建时，在 `android/key.properties`（git 忽略）里写 `storeFile`（相对 `android/app` 的路径）、`storePassword`、`keyAlias`、`keyPassword`，四项都要有。没有这个文件，发布构建会回退到调试密钥。macOS 应用未签名：首次打开请右键 -> 打开。iOS `.ipa` 也是未签名的（`--no-codesign`）；侧载工具会用用户自己的 Apple ID 签名。
 
-## 致谢与 v1
+## 致谢
+
+html2apk 的灵感来自 [devilAPI/web2apk](https://github.com/devilAPI/web2apk)。感谢 devilAPI 提供的最初想法和模板——html2apk 在此基础上增加了文件夹与单个文件来源、中英双语界面和多平台构建。
 
 Made by devilAPI with <3 - https://github.com/elvisl8/html2apk
 
