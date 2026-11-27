@@ -11,8 +11,10 @@ import '../fixtures/golden_key.dart';
 import '../fixtures/mini_template.dart';
 
 /// SHA-256 of the APK produced on the Dart VM; Chrome (dart2js) must match.
+/// The template manifest was renamed from web2apk to html2apk, so the
+/// golden moved from 91728271… to this value (verified stable across runs).
 const _goldenSha256 =
-    '917282717c06ec7ff9fc97766b0606b6bc6fca7968dff5d3efe61faf08659934';
+    '724d4206d849c35c239ddc3c1428d0f9a1c9e0142bbb1ee271a0df02e468de8d';
 
 void main() {
   test('buildApk on mini template is byte-identical across platforms', () {
