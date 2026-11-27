@@ -6,6 +6,8 @@
 
 **Turn any website into an installable Android app — right in your browser. No install, no Android toolchain, no server, no account.**
 
+Inspired by [devilAPI/web2apk](https://github.com/devilAPI/web2apk).
+
 html2apk builds a signed APK **on your own device**, in pure Dart, by patching a tiny WebView template. The APK is assembled and signed locally (WebCrypto on the web), so your site and your signing key never leave your machine. Give it a website URL, a folder containing `index.html`, or a single HTML file — a folder or single-file site is bundled inside the APK and works fully offline.
 
 <!-- screenshot placeholder: docs/screenshot.png -->
@@ -112,7 +114,9 @@ Also set the secrets `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`html2apk
 
 For a local release build, create `android/key.properties` (gitignored) with `storeFile` (relative to `android/app`), `storePassword`, `keyAlias`, `keyPassword`; all four are required. Without the file, release builds fall back to the debug key. The macOS app is unsigned: right-click -> Open the first time. The iOS `.ipa` is unsigned too (`--no-codesign`); sideloading tools sign it with the user's own Apple ID.
 
-## Credits and v1
+## Credits
+
+Inspired by [devilAPI/web2apk](https://github.com/devilAPI/web2apk). Thank you, devilAPI, for the original idea and template — html2apk builds on it with folder and single-file sources, a bilingual UI and multi-platform builds.
 
 Made by devilAPI with <3 - https://github.com/elvisl8/html2apk
 
