@@ -1,5 +1,5 @@
 name: html2apk
-description: "Turn a static HTML site - a website URL, a folder with index.html, or a single HTML file - into an Android app (APK), right on your device."
+description: "Turn any website - a website URL, a folder with index.html, or a single HTML file - into an Android app (APK), right on your device."
 publish_to: 'none'
 
 version: 2.1.0+1
