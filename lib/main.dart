@@ -1,0 +1,52 @@
+// Made by devilAPI with <3
+// https://github.com/elvisl8/html2apk
+
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'src/apk_actions.dart';
+import 'src/key_store.dart';
+import 'src/l10n.dart';
+import 'src/saved_apps.dart';
+import 'src/ui/generator_page.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final prefs = await SharedPreferences.getInstance();
+  runApp(Html2ApkApp(prefs: prefs));
+}
+
+class Html2ApkApp extends StatelessWidget {
+  const Html2ApkApp({super.key, required this.prefs});
+
+  final SharedPreferences prefs;
+
+  @override
+  Widget build(BuildContext context) {
+    // L10n wraps MaterialApp, not just home: pushed routes and dialogs
+    // are built by the Navigator above home, so wrapping only home would
+    // leave every sub-page on the system language.
+    return L10n(
+      prefs: prefs,
+      child: MaterialApp(
+        title: 'html2apk',
+        theme: ThemeData(
+          useMaterial3: true,
+          colorSchemeSeed: const Color(0xFF2196F3),
+        ),
+        darkTheme: ThemeData(
+          useMaterial3: true,
+          brightness: Brightness.dark,
+          colorSchemeSeed: const Color(0xFF2196F3),
+        ),
+        themeMode: ThemeMode.dark,
+        home: GeneratorPage(
+          actions: PlatformApkActions(),
+          savedApps: SavedAppsStore(prefs),
+          loadKey: () => loadOrCreateSigningKey(prefs),
+          replaceKey: (key) => replaceSigningKey(prefs, key),
+        ),
+      ),
+    );
+  }
+}
