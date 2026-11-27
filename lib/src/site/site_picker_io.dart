@@ -8,7 +8,7 @@ import '../site_files.dart';
 /// Lets the user pick a site folder; null when cancelled. Files are keyed
 /// by path relative to the folder, with `/` separators.
 Future<PickedSite?> pickSiteFolder() async {
-  final path = await FilePicker.platform.getDirectoryPath();
+  final path = await FilePicker.getDirectoryPath();
   if (path == null) return null;
   var root = Directory(path).path;
   while (root.endsWith(Platform.pathSeparator) && root.length > 1) {
@@ -34,7 +34,7 @@ Future<PickedSite?> pickSiteFolder() async {
 /// Lets the user pick a single HTML file; null when cancelled. The file is
 /// stored as the site's `index.html`.
 Future<PickedSite?> pickSingleHtmlFile() async {
-  final result = await FilePicker.platform.pickFiles(
+  final result = await FilePicker.pickFiles(
     type: FileType.custom,
     allowedExtensions: ['html', 'htm'],
     withData: true,
